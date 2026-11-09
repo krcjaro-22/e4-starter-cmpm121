@@ -4,7 +4,6 @@ import {
   type Arena,
   Bullet,
   HEIGHT,
-
   Player,
   WIDTH,
 } from "./actors.ts";

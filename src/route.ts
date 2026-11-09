@@ -116,12 +116,20 @@ export function placeInWave(
     case "line": // side by side, all at once
       return { t: wave.at, x: centre + offset * 64, y: -30 };
     case "vee": // tighter spacing, the middle arrives first
-      return { t: wave.at + Math.abs(offset) * 10, x: centre + offset * 44, y: -30 };
+      return {
+        t: wave.at + Math.abs(offset) * 10,
+        x: centre + offset * 44,
+        y: -30,
+      };
     case "column": // one behind another
       return { t: wave.at + i * 24, x: centre, y: -30 };
     case "pincer": { // pairs from the left and right edges, each pair lower
       const row = Math.floor(i / 2);
-      return { t: wave.at + row * 30, x: i % 2 === 0 ? -30 : 510, y: 70 + row * 50 };
+      return {
+        t: wave.at + row * 30,
+        x: i % 2 === 0 ? -30 : 510,
+        y: 70 + row * 50,
+      };
     }
   }
 }

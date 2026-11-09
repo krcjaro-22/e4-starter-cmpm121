@@ -1,5 +1,5 @@
 /* Neon Warden: the HUD panels tilt toward the screen like an arcade cabinet. */
-:root{
+:root {
   --cyan: #5ef2ff;
   --yellow: #ffe066;
   --pink: #ff5ea8;
@@ -7,7 +7,7 @@
   --muted: #6f86a8;
   --text: #e8fdff;
   --night: #1a0f3a;
-  --void:  #04020c;
+  --void: #04020c;
   --ink: #0e0a22;
 
   --panel-edge: color-mix(in srgb, var(--cyan) 35%, transparent);
@@ -40,14 +40,16 @@ body {
   display: grid;
   place-content: center;
   gap: var(--gap);
-  background: radial-gradient(ellipse at 50% 30%, var(--night), var(--void) 70%);
+  background: radial-gradient(ellipse at 50% 30%, var(--night), var(--void)
+    70%);
   color: var(--text);
   font-family: var(--font-mono);
 }
 
 .cabinet {
   display: grid;
-  grid-template-columns: var(--panel-width) var(--screen-width) var(--panel-width);
+  grid-template-columns: var(--panel-width) var(--screen-width)
+    var(--panel-width);
   align-items: center;
   perspective: 900px;
 }
@@ -61,7 +63,8 @@ body {
   border: 1px solid var(--panel-edge);
   border-radius: var(--radius);
   background: var(--panel-bg);
-  box-shadow: 0 0 24px var(--panel-glow), inset 0 0 18px var(--panel-inner-glow);
+  box-shadow: 0 0 24px var(--panel-glow), inset 0 0 18px
+    var(--panel-inner-glow);
   transition: opacity 400ms, transform 400ms;
 }
 
@@ -73,7 +76,8 @@ body {
 
 .panel-right {
   transform-origin: left center;
-  transform: translateX(calc(-1 * var(--overlap))) rotateY(calc(-1 * var(--tilt)));
+  transform: translateX(calc(-1 * var(--overlap))) rotateY(calc(-1 *
+    var(--tilt)));
 }
 
 .cabinet[data-mode="title"] .panel,
@@ -127,7 +131,7 @@ output {
   border-radius: 2px;
   color: var(--yellow);
 }
- 
+
 .pip.lit,
 .cell.lit {
   opacity: 1;
@@ -201,7 +205,7 @@ output {
 .stop[data-state="cleared"] .stop-dot {
   background: currentColor;
 }
- 
+
 .stop[data-state="current"] {
   color: var(--yellow);
   text-shadow: var(--glow);
@@ -214,7 +218,7 @@ output {
 .stop:last-child {
   color: var(--red);
 }
- 
+
 .boss {
   color: var(--red);
 }
@@ -239,7 +243,7 @@ output {
   transform: scaleX(var(--fill));
   transition: transform 120ms linear;
 }
- 
+
 /* Sector banners flip down from the top of the screen, then fold away. */
 .banner {
   position: absolute;
