@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { Rng } from "./rng.ts";
+import type { EnemyKind } from "./route.ts";
 
 export const WIDTH = 480;
 export const HEIGHT = 640;
@@ -145,5 +146,291 @@ export class Player extends Actor {
   override destroy(fromScene?: boolean): void {
     this.bubble.destroy(fromScene);
     super.destroy(fromScene);
+  }
+}
+
+function aim(from: { x: number; y: number }, arena: Arena): number {
+  return Math.atan2(arena.player.y - from.y, arena.player.x - from.x);
+}
+
+/** What every enemy of one kind shares. */
+export interface EnemyStats {
+  texture: string;
+  hp: number;
+  score: number;
+  /** Collision radius in pixels. */
+  radius: number;
+  /** Chance (0–1) that destroying one drops a power-up. */
+  dropChance: number;
+}
+
+/** Anything the player can shoot: it has hit points and is worth points. */
+export abstract class Enemy extends Actor {
+  hp: number;
+  readonly maxHp: number;
+  readonly score: number;
+  readonly dropChance: number;
+  private flash = 0;
+
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    stats: EnemyStats,
+  ) {
+    super(scene, x, y, stats.texture, stats.radius);
+    this.hp = stats.hp;
+    this.maxHp = stats.hp;
+    this.score = stats.score;
+    this.dropChance = stats.dropChance;
+  }
+
+  abstract step(arena: Arena): void;
+
+  /** Returns true when this hit destroys the enemy. */
+  takeDamage(amount: number): boolean {
+    this.hp -= amount;
+    this.flash = 3;
+    return this.hp <= 0;
+  }
+
+  /** Shows a white flash for a few ticks after each hit. */
+  protected fadeHitFlash(): void {
+    this.flash = Math.max(0, this.flash - 1);
+    if (this.flash > 0) {
+      this.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+    } else this.clearTint();
+  }
+}
+
+/** One kind of wave enemy: its stats, how it moves, and how it shoots. */
+export interface WaveKind extends EnemyStats {
+  move(enemy: WaveEnemy, arena: Arena): void;
+  /** Kinds that never shoot leave this out. */
+  fire?(enemy: WaveEnemy, arena: Arena): void;
+}
+
+export const WAVE_KINDS: Record<EnemyKind, WaveKind> = {
+  drone: {
+    texture: "drone",
+    hp: 2,
+    score: 100,
+    radius: 13,
+    dropChance: 0.015,
+    move(enemy) {
+      enemy.y += 1.5;
+      enemy.x = enemy.homeX +
+        Math.sin(enemy.age * 0.045) * 46 * enemy.side;
+    },
+    fire(enemy, arena) {
+      if (enemy.age % 100 !== 60 || !arena.rng.chance(0.35)) return;
+      arena.fire(enemy.x, enemy.y, aim(enemy, arena), 2.4);
+    },
+  },
+  dart: {
+    texture: "dart",
+    hp: 1,
+    score: 150,
+    radius: 12,
+    dropChance: 0.015,
+    // Drift in slowly, then commit to a dive toward where the player was.
+    move(enemy, arena) {
+      if (enemy.age < 50) {
+        enemy.y += 1.2;
+        return;
+      }
+      if (enemy.age === 50) {
+        enemy.heading = Math.sign(arena.player.x - enemy.x) * 1.4;
+      }
+      enemy.y += 5.2;
+      enemy.x += enemy.heading;
+    },
+  },
+  turret: {
+    texture: "turret",
+    hp: 12,
+    score: 400,
+    radius: 19,
+    dropChance: 0.3,
+    move(enemy) {
+      if (enemy.age < 70) enemy.y += 1.6;
+      else if (enemy.age > 420) enemy.y += 1.2;
+      enemy.rotation += 0.02;
+    },
+    fire(enemy, arena) {
+      const t = enemy.age - 80;
+      if (t < 0 || enemy.age > 420 || t % 100 > 40 || t % 8 !== 0) return;
+      arena.fire(enemy.x, enemy.y, aim(enemy, arena), 3.4);
+    },
+  },
+  lancer: {
+    texture: "lancer",
+    hp: 4,
+    score: 250,
+    radius: 15,
+    dropChance: 0.06,
+    move(enemy) {
+      enemy.x += 2.4 * enemy.side;
+      enemy.y += 0.35;
+    },
+    fire(enemy, arena) {
+      if (enemy.age % 40 !== 20 || enemy.x < 20 || enemy.x > WIDTH - 20) {
+        return;
+      }
+      for (const spread of [-0.25, 0, 0.25]) {
+        arena.fire(enemy.x, enemy.y + 8, Math.PI / 2 + spread, 2.6);
+      }
+    },
+  },
+};
+
+/** A regular enemy sent in by the route; its kind decides how it acts. */
+export class WaveEnemy extends Enemy {
+  private readonly behaviour: WaveKind;
+  /** The x a drone weaves around: where it spawned. */
+  readonly homeX: number;
+  /** A dart's sideways drift once it dives. */
+  heading = 0;
+
+  /** side is 1 or -1: which way drones weave and lancers fly. */
+  constructor(
+    scene: Phaser.Scene,
+    kind: EnemyKind,
+    x: number,
+    y: number,
+    readonly side = 1,
+  ) {
+    super(scene, x, y, WAVE_KINDS[kind]);
+    this.behaviour = WAVE_KINDS[kind];
+    this.homeX = x;
+  }
+
+  step(arena: Arena): void {
+    this.age++;
+    const { x, y } = this;
+    this.behaviour.move(this, arena);
+    this.vx = this.x - x;
+    this.vy = this.y - y;
+    this.behaviour.fire?.(this, arena);
+    this.fadeHitFlash();
+  }
+}
+
+const WARDEN_STATS: EnemyStats = {
+  texture: "boss",
+  hp: 900,
+  score: 10000,
+  radius: 46,
+  dropChance: 0,
+};
+/** Ticks the Warden spends descending, immune to damage. */
+const WARDEN_ARRIVAL = 150;
+
+/** The Warden: a three-phase finale whose attacks escalate as it weakens. */
+export class Warden extends Enemy {
+  readonly core: Phaser.GameObjects.Image;
+  /** Angle of the phase-3 spiral. */
+  private spin = 0;
+
+  constructor(scene: Phaser.Scene) {
+    super(scene, WIDTH / 2, -90, WARDEN_STATS);
+    this.core = scene.add.image(this.x, this.y, "boss-core").setBlendMode(
+      Phaser.BlendModes.ADD,
+    );
+  }
+
+  /** Remaining hit points, from 1 (full) to 0. */
+  get fraction(): number {
+    return this.hp / this.maxHp;
+  }
+
+  phase(): number {
+    return this.fraction > 2 / 3 ? 1 : this.fraction > 1 / 3 ? 2 : 3;
+  }
+
+  /** The Warden ignores damage until it has finished descending. */
+  get arrived(): boolean {
+    return this.age > WARDEN_ARRIVAL;
+  }
+
+  override takeDamage(amount: number): boolean {
+    return this.arrived ? super.takeDamage(amount) : false;
+  }
+
+  step(arena: Arena): void {
+    this.age++;
+    // Known quirk: velocity is recorded before the Warden moves, so observers
+    // always see it standing still. Self-play depends on this order.
+    this.vx = 0;
+    this.vy = 0;
+    this.fadeHitFlash();
+    if (!this.arrived) {
+      this.y += 1.4;
+    } else {
+      const sway = this.phase() === 3 ? 0.012 : 0.008;
+      this.x = WIDTH / 2 + Math.sin((this.age - WARDEN_ARRIVAL) * sway) * 140;
+      this.attack(arena, this.age - WARDEN_ARRIVAL);
+    }
+    this.core.setPosition(this.x, this.y + 6);
+    this.core.setScale(1 + 0.15 * Math.sin(this.age * (0.08 * this.phase())));
+  }
+
+  private attack(arena: Arena, t: number): void {
+    if (this.phase() === 1 && t % 55 === 0) this.fan(arena, 9, 1.1, 2.8);
+    if (this.phase() === 2) {
+      if (t % 80 === 0) this.fan(arena, 9, 1.2, 3);
+      if (t % 80 === 40) {
+        for (const d of [-0.12, 0, 0.12]) {
+          arena.fire(this.x, this.y + 30, aim(this, arena) + d, 4.2, true);
+        }
+      }
+      if (t % 360 === 180) {
+        arena.summon("drone", this.x - 70, this.y);
+        arena.summon("drone", this.x + 70, this.y);
+      }
+    }
+    if (this.phase() === 3 && t % 6 === 0) {
+      this.spin += 0.23;
+      for (let arm = 0; arm < 4; arm++) {
+        arena.fire(this.x, this.y + 6, this.spin + (arm * Math.PI) / 2, 2.6);
+      }
+      if (t % 48 === 0) {
+        arena.fire(this.x, this.y + 30, aim(this, arena), 4.6, true);
+      }
+    }
+  }
+
+  private fan(arena: Arena, count: number, width: number, speed: number): void {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.PI / 2 + (i / (count - 1) - 0.5) * width;
+      arena.fire(this.x, this.y + 40, angle, speed);
+    }
+  }
+
+  override destroy(fromScene?: boolean): void {
+    this.core.destroy(fromScene);
+    super.destroy(fromScene);
+  }
+}
+
+export type PowerUpKind = "spread" | "shield";
+const POWER_UP_RADIUS = 14;
+
+/** A pickup that drifts down the screen; it only moves and collides. */
+export class PowerUp extends Actor {
+  constructor(
+    scene: Phaser.Scene,
+    readonly kind: PowerUpKind,
+    x: number,
+    y: number,
+  ) {
+    super(scene, x, y, kind, POWER_UP_RADIUS);
+  }
+
+  step(): void {
+    this.age++;
+    this.y += 1.1;
+    this.rotation += 0.04;
+    this.setScale(1 + 0.12 * Math.sin(this.age * 0.15));
   }
 }
