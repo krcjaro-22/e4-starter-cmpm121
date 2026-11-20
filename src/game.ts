@@ -30,13 +30,7 @@ const VICTORY_TICKS = 180;
 /** Seconds of idling before the title hands the ship to the autopilot. */
 const IDLE_SECONDS = 8;
 
-/** ShmupPrefabSprite's settings for each kind of enemy. */
-const ENEMY_STATS = {
-  drone: { hp: 2, score: 100, radius: 13, dropChance: 0.015, shoots: true },
-  dart: { hp: 1, score: 150, radius: 12, dropChance: 0.015, shoots: false },
-  turret: { hp: 12, score: 400, radius: 19, dropChance: 0.3, shoots: true },
-  lancer: { hp: 4, score: 250, radius: 15, dropChance: 0.06, shoots: true },
-};
+// CHANGED (Step 5): deleted ENEMY_STATS here (it moved to prefab.ts as PREFAB_STATS)
 
 /** Lines of the closing story and when (seconds) each appears. */
 const STORY: [number, string][] = [
@@ -421,23 +415,7 @@ export class GameScene extends Phaser.Scene implements Arena {
   }
 
   private spawnEnemy(kind: EnemyKind, x: number, y: number, dir: number): void {
-    const stats = ENEMY_STATS[kind];
-    this.enemies.push(
-      new ShmupPrefabSprite(
-        this,
-        x,
-        y,
-        kind,
-        stats.hp,
-        stats.score,
-        stats.radius,
-        stats.dropChance,
-        stats.shoots,
-        false,
-        x,
-        dir,
-      ),
-    );
+    this.enemies.push(new ShmupPrefabSprite(this, kind, x, y, dir));
   }
 
   private startBoss(): void {
@@ -493,7 +471,7 @@ export class GameScene extends Phaser.Scene implements Arena {
       const kind = this.player.power < 3 && this.rng.chance(0.5)
         ? "spread"
         : "shield";
-      this.pickups.push(new ShmupPowerUp(this, enemy.x, enemy.y, kind));
+      this.pickups.push(new ShmupPowerUp(this, kind, enemy.x, enemy.y));
     }
   }
 
